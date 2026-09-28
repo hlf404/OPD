@@ -1113,31 +1113,39 @@ class DataParallelPPOActor(BasePPOActor):
                             student_norm_logZ = torch.logsumexp(S_logits_on_T, dim=-1, keepdim=True)
                         # --------------------------------------------------------
                         # Decomposed Forward KL:
+                        #
                         # q*T - q*S + q*logZ_S - q*logZ_T_topk
+                        # --------------------------------------------------------
+                        # kl_term_1_teacher_logit = q_teacher * T_logits_on_T
+                        kl_term_2_student_logit = -q_teacher * S_logits_on_T
+                        kl_term_3_student_logZ = q_teacher * student_norm_logZ
+                        # kl_term_4_teacher_topk_logZ = -q_teacher * teacher_topk_logZ
+                        kl_val = kl_term_2_student_logit + kl_term_3_student_logZ
+                        forward_kl_per_token = torch.sum(kl_val, dim=-1)
+                        # --------------------------------------------------------
+                        # entropy gate
                         # --------------------------------------------------------
                         teacher_entropy = model_inputs["teacher_entropy"].detach().float()
                         entropy_threshold = self.config.policy_loss.get("forward_kl_entropy_threshold", 0.8)
-                        entropy_weight = (teacher_entropy / entropy_threshold).detach()
-                        kl_term_student_logit = -(q_teacher * S_logits_on_T).sum(dim=-1)
-                        kl_term_student_logZ = student_norm_logZ.squeeze(-1)
+                        forward_kl_coef = self.config.policy_loss.get("forward_kl_coef", 1.0)
+                        entropy_gate = (teacher_entropy >= entropy_threshold).to(forward_kl_per_token.dtype)
 
-                        # Only logZ term is dynamically weighted
-                        forward_kl_per_token = kl_term_student_logit + entropy_weight * kl_term_student_logZ
                         # --------------------------------------------------------
                         # RKL + alpha * I[H > tau] * FKL
                         # --------------------------------------------------------
-                        forward_kl_coef = self.config.policy_loss.get("forward_kl_coef", 1.0)
                         forward_loss_mask = response_mask
                         if format_mask is not None:
                             forward_loss_mask = forward_loss_mask* format_mask.unsqueeze(-1)
-                        forward_kl_loss = agg_loss(loss_mat=forward_kl_per_token, loss_mask=forward_loss_mask, loss_agg_mode=loss_agg_mode)
-                        policy_loss = policy_loss + forward_kl_loss * forward_kl_coef
+                        forward_kl_loss = agg_loss(loss_mat=forward_kl_per_token * entropy_gate, loss_mask=forward_loss_mask, loss_agg_mode=loss_agg_mode)
+                        policy_loss = policy_loss + forward_kl_coef * forward_kl_loss
                         # --------------------------------------------------------
                         # Logging
                         # --------------------------------------------------------
                         micro_batch_metrics["actor/forward_kl_loss"] = forward_kl_loss.detach().item() * loss_scale_factor
                         micro_batch_metrics["actor/forward_kl_coef"] = float(forward_kl_coef)
-                        
+                        valid_count = forward_loss_mask.sum().clamp_min(1.0)
+                        micro_batch_metrics["actor/forward_kl_token_ratio"] = ((entropy_gate).sum() / valid_count).detach().item()
+
                     if self.config.use_kl_loss:
                         ref_log_prob = model_inputs["ref_log_prob"]
                         # compute kl loss
