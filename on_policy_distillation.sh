@@ -31,34 +31,35 @@ fi
 ray stop --force
 export RAY_ADDRESS=local
 export RAY_memory_usage_threshold=0.99
-export CUDA_LAUNCH_BLOCKING=1
+#export CUDA_LAUNCH_BLOCKING=1
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 export PYTHONUNBUFFERED=1
 export PROJECT_NAME='OnPolicyDistillation' # TODO
 export TORCH_NCCL_BLOCKING_WAIT=1
 export NCCL_TIMEOUT=7200
-export TORCH_DISTRIBUTED_DEBUG=INFO
+#export TORCH_DISTRIBUTED_DEBUG=INFO
+export TORCH_DISTRIBUTED_DEBUG=OFF
 export ADV_ESTIMATOR=token_reward_direct
 # export ADV_ESTIMATOR=token_reward_direct_plus_grpo
 # export ADV_ESTIMATOR=token_grpo
 # export ADV_ESTIMATOR=grpo
 export GRPO_OUTCOME_WEIGHT=1.0
 # export ADV_ESTIMATOR=token_grpo
-# Swanlab setting used to continue exp  
+# Swanlab setting used to continue exp
 # export SWANLAB_RESUME=must
 # export SWANLAB_RUN_ID="jri5qia6iy67v7su0zjsv"
 
 
 # DeepMath-103K
 export MAX_PROMPT_LENGTH=1024
-export MAX_RESP_LENGTH=8192  # TODO: 31744 /15360 / 7168 / 3072 / 5120
+export MAX_RESP_LENGTH=4096  # TODO: 31744 /15360 / 7168 / 3072 / 5120
 export MAX_VAL_RESP_LENGTH=8192 # TODO: 15360 / 7168 / 3072
 export MAX_MODEL_LEN=$(( MAX_RESP_LENGTH + MAX_PROMPT_LENGTH > MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ? MAX_RESP_LENGTH + MAX_PROMPT_LENGTH : MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ))
 export MINI_BATCH_SIZE=${MINI_BATCH_SIZE:-32} # TODO: 1 / 8 / 16 / 32 / 64 (default 64)
 export TEMPERATURE=${TEMPERATURE:-1.0} # TODO: 0.6 / 0.8 / 1.0 / 1.2 (default 1.0)
 export TEACHER_TEMPERATURE=${TEACHER_TEMPERATURE:-1.0} # Teacher logits temperature (default 1.0, no scaling)
 export REPETITION_PENALTY=${REPETITION_PENALTY:-1.0} # TODO: 1.0 / 1.1 / 1.2 (default 1.0, no penalty)
-export N_RESPONSES=8 # TODO: 4 / 8 / 16 / 32 (default: 8)
+export N_RESPONSES=1 # TODO: 4 / 8 / 16 / 32 (default: 8)
 # export LOG_PROB_TOP_K=${LOG_PROB_TOP_K:-0} # 0 represents no top-k sampling
 export REVERSE_KL_TOP_K=${REVERSE_KL_TOP_K:-0}
 export FORWARD_KL_TOP_K=${FORWARD_KL_TOP_K:-16}
@@ -136,7 +137,7 @@ export REWARD_MODEL_PATH=model/Qwen3-8B-Base
 export REWARD_MODEL_NAME=$(basename "$REWARD_MODEL_PATH")
 
 export PROJECT_PATH=checkpoint
-export PARALLEL_SIZE=1
+export PARALLEL_SIZE=4
 export CKPT_PATH=${PROJECT_PATH}/${ADV_ESTIMATOR}_${TRAIN_DATASET_NAME}_${ACTOR_MODEL_NAME}_${REWARD_MODEL_NAME}_${MAX_RESP_LENGTH}-T_${TEMPERATURE}-Tch_${TEACHER_TEMPERATURE}-n_${N_RESPONSES}-mbs_${MINI_BATCH_SIZE}-rkl_topk_${REVERSE_KL_TOP_K}-fkl_topk_${FORWARD_KL_TOP_K}-topk_strategy_${TOP_K_STRATEGY}-rw_${REWARD_WEIGHT_MODE}-$(date +%Y-%m-%d_%H-%M-%S)
 export OUTLINES_CACHE_DIR=~/.cache/outlines/$(uuidgen)
 export NCCL_DEBUG=WARN
@@ -159,16 +160,20 @@ else
     KL_ARGS="actor_rollout_ref.actor.use_kl_loss=False"
 fi
 
-LR_ARGS=""
-if [ "$LR_SCHEDULER" = "cosine" ]; then
-    LR_ARGS="actor_rollout_ref.actor.optim.warmup_style=cosine \
-    actor_rollout_ref.actor.optim.lr_warmup_steps_ratio=0.03"
-fi
+#LR_ARGS=""
+#if [ "$LR_SCHEDULER" = "cosine" ]; then
+#    LR_ARGS="actor_rollout_ref.actor.optim.warmup_style=cosine \
+#    actor_rollout_ref.actor.optim.lr_warmup_steps_ratio=0.03"
+#fi
 
-PPO_MAX_TOKEN_LEN_PER_GPU=$(( ((1024 + MAX_RESP_LENGTH) > 32768) ? (1024 + MAX_RESP_LENGTH) : 32768))
-# PPO_MAX_TOKEN_LEN_PER_GPU=$(( ((1024 + MAX_RESP_LENGTH) > 32768) ? (1024 + MAX_RESP_LENGTH) : 7168))
+#PPO_MAX_TOKEN_LEN_PER_GPU=$(( ((1024 + MAX_RESP_LENGTH) > 32768) ? (1024 + MAX_RESP_LENGTH) : 32768))
+#PPO_MAX_TOKEN_LEN_PER_GPU=$(( ((1024 + MAX_RESP_LENGTH) > 32768) ? (1024 + MAX_RESP_LENGTH) : 16384))
+#echo "PPO_MAX_TOKEN_LEN_PER_GPU: $PPO_MAX_TOKEN_LEN_PER_GPU"
+
+PPO_MAX_TOKEN_LEN_PER_GPU=16384
+ROLLOUT_MAX_NUM_BATCHED_TOKENS=8192
 echo "PPO_MAX_TOKEN_LEN_PER_GPU: $PPO_MAX_TOKEN_LEN_PER_GPU"
-
+echo "ROLLOUT_MAX_NUM_BATCHED_TOKENS: $ROLLOUT_MAX_NUM_BATCHED_TOKENS"
 
 ray start --head
 sleep 5
@@ -191,24 +196,27 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.model.enable_activation_offload=True \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.actor.optim.lr=3e-6 \
-    $LR_ARGS \
+    actor_rollout_ref.actor.optim.warmup_style=cosine \
+    actor_rollout_ref.actor.optim.lr_warmup_steps_ratio=0.1 \
+    actor_rollout_ref.actor.optim.lr_scheduler_type=cosine \
     actor_rollout_ref.actor.ppo_mini_batch_size=$MINI_BATCH_SIZE \
     actor_rollout_ref.actor.use_dynamic_bsz=True \
-    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 \
+    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=4 \
     actor_rollout_ref.actor.ppo_max_token_len_per_gpu=$PPO_MAX_TOKEN_LEN_PER_GPU \
-    actor_rollout_ref.actor.ulysses_sequence_parallel_size=$PARALLEL_SIZE \
+    actor_rollout_ref.actor.ulysses_sequence_parallel_size=1 \
     $KL_ARGS \
     actor_rollout_ref.actor.loss_agg_mode=$LOSS_AGG_MODE \
     actor_rollout_ref.actor.fsdp_config.param_offload=False \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
     actor_rollout_ref.actor.fsdp_config.forward_prefetch=True \
     actor_rollout_ref.actor.fsdp_config.model_dtype=$MODEL_DTYPE \
-    actor_rollout_ref.rollout.max_num_batched_tokens=$PPO_MAX_TOKEN_LEN_PER_GPU \
+    actor_rollout_ref.rollout.max_num_batched_tokens=$ROLLOUT_MAX_NUM_BATCHED_TOKENS \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
     actor_rollout_ref.ref.fsdp_config.model_dtype=$MODEL_DTYPE \
     actor_rollout_ref.ref.log_prob_use_dynamic_bsz=True \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.temperature=$TEMPERATURE \
+    actor_rollout_ref.rollout.top_p=1.0 \
     actor_rollout_ref.rollout.log_prob_use_dynamic_bsz=True \
     actor_rollout_ref.rollout.reverse_kl_top_k=$REVERSE_KL_TOP_K \
     actor_rollout_ref.rollout.forward_kl_top_k=$FORWARD_KL_TOP_K \
@@ -218,8 +226,8 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.policy_loss.forward_kl_coef=1.0 \
     actor_rollout_ref.actor.policy_loss.forward_kl_entropy_threshold=0.8 \
     actor_rollout_ref.actor.policy_loss.forward_kl_student_full_vocab=True \
-    actor_rollout_ref.rollout.tensor_model_parallel_size=$PARALLEL_SIZE \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.7 \
+    actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
+    actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \
     actor_rollout_ref.rollout.max_model_len=$MAX_MODEL_LEN \
     actor_rollout_ref.rollout.n=$N_RESPONSES \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
@@ -248,7 +256,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.validation_data_dir=validation_log/$EXPERIMENT_NAME \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
-    trainer.save_freq=20 \
+    trainer.save_freq=100 \
     trainer.test_freq=20 \
     trainer.total_epochs=3 \
     trainer.max_actor_ckpt_to_keep=2 \
