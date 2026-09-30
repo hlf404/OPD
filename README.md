@@ -23,8 +23,22 @@ pip install math-verify
 
 ### OPD训练
 
+RKL（传统OPD）训练
+
 ```bash
-bash on_policy_distillation.sh
+bash on_policy_distillation_rkl.sh
+```
+
+RKL+FKL训练需要将脚本on_policy_distillation_rkl.sh中的export USE_KL=${USE_KL:-False}改为True
+
+```bash
+bash on_policy_distillation_rkl.sh
+```
+
+Top_k token的OPD训练需要将脚本on_policy_distillation_rkl.sh中的export REVERSE_KL_TOP_K=${REVERSE_KL_TOP_K:-0}改为1，8，16，32，64中的一个
+
+```bash
+bash on_policy_distillation_rkl.sh
 ```
 
 ## 注意事项
