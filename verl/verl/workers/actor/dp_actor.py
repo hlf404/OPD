@@ -1074,78 +1074,7 @@ class DataParallelPPOActor(BasePPOActor):
                         policy_loss = pg_loss - entropy_loss * entropy_coeff
                     else:
                         policy_loss = pg_loss
-                    
-                    if forward_student_log_probs is not None:
-                        required_fkl_keys = (
-                            "forward_teacher_top_k_log_probs",
-                            "teacher_logsumexp",
-                            "teacher_entropy",
-                        )
-
-                        missing_fkl_keys = [key for key in required_fkl_keys if key not in model_inputs]
-
-                        if missing_fkl_keys:
-                            raise RuntimeError(
-                                f"Missing forward-KL tensors: "
-                                f"{missing_fkl_keys}"
-                            )
-
-                        if current_student_logsumexp is None:
-                            raise RuntimeError(
-                                "forward KL requires "
-                                "current_student_logsumexp"
-                            )
-
-                        T_topk_logp_full = model_inputs["forward_teacher_top_k_log_probs"].detach().float()
-                        T_logZ_full = model_inputs["teacher_logsumexp"].detach().float()
-                        S_topk_logp_full = forward_student_log_probs.float()
-                        S_logZ_full = current_student_logsumexp.float()
-                        T_logits_on_T = T_topk_logp_full + T_logZ_full
-                        S_logits_on_T = S_topk_logp_full + S_logZ_full
-                        teacher_topk_logZ = torch.logsumexp(T_logits_on_T, dim=-1,  keepdim=True)
-                        q_teacher = torch.softmax(T_logits_on_T, dim=-1).detach()
                         
-                        student_full_vocab = self.config.policy_loss.get("forward_kl_student_full_vocab", True)
-
-                        if student_full_vocab:
-                            student_norm_logZ = S_logZ_full
-                        else:
-                            student_norm_logZ = torch.logsumexp(S_logits_on_T, dim=-1, keepdim=True)
-                        # --------------------------------------------------------
-                        # Decomposed Forward KL:
-                        #
-                        # q*T - q*S + q*logZ_S - q*logZ_T_topk
-                        # --------------------------------------------------------
-                        # kl_term_1_teacher_logit = q_teacher * T_logits_on_T
-                        kl_term_2_student_logit = -q_teacher * S_logits_on_T
-                        kl_term_3_student_logZ = q_teacher * student_norm_logZ
-                        # kl_term_4_teacher_topk_logZ = -q_teacher * teacher_topk_logZ
-                        kl_val = kl_term_2_student_logit + kl_term_3_student_logZ
-                        forward_kl_per_token = torch.sum(kl_val, dim=-1)
-                        # --------------------------------------------------------
-                        # entropy gate
-                        # --------------------------------------------------------
-                        teacher_entropy = model_inputs["teacher_entropy"].detach().float()
-                        entropy_threshold = self.config.policy_loss.get("forward_kl_entropy_threshold", 0.8)
-                        forward_kl_coef = self.config.policy_loss.get("forward_kl_coef", 1.0)
-                        entropy_gate = (teacher_entropy >= entropy_threshold).to(forward_kl_per_token.dtype)
-
-                        # --------------------------------------------------------
-                        # RKL + alpha * I[H > tau] * FKL
-                        # --------------------------------------------------------
-                        forward_loss_mask = response_mask
-                        if format_mask is not None:
-                            forward_loss_mask = forward_loss_mask* format_mask.unsqueeze(-1)
-                        forward_kl_loss = agg_loss(loss_mat=forward_kl_per_token * entropy_gate, loss_mask=forward_loss_mask, loss_agg_mode=loss_agg_mode)
-                        policy_loss = policy_loss + forward_kl_coef * forward_kl_loss
-                        # --------------------------------------------------------
-                        # Logging
-                        # --------------------------------------------------------
-                        micro_batch_metrics["actor/forward_kl_loss"] = forward_kl_loss.detach().item() * loss_scale_factor
-                        micro_batch_metrics["actor/forward_kl_coef"] = float(forward_kl_coef)
-                        valid_count = forward_loss_mask.sum().clamp_min(1.0)
-                        micro_batch_metrics["actor/forward_kl_token_ratio"] = ((entropy_gate).sum() / valid_count).detach().item()
-
                     if self.config.use_kl_loss:
                         ref_log_prob = model_inputs["ref_log_prob"]
                         # compute kl loss
