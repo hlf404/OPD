@@ -157,7 +157,7 @@ if [ "$USE_KL" = "True" ]; then
     actor_rollout_ref.actor.kl_loss_type=low_var_kl"
 else
     KL_ARGS="actor_rollout_ref.actor.use_kl_loss=False"
-fi
+fi high_entropy_threshold
 
 LR_ARGS=""
 if [ "$LR_SCHEDULER" = "cosine" ]; then
@@ -225,7 +225,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
     +actor_rollout_ref.rollout.val_kwargs.max_tokens=$MAX_VAL_RESP_LENGTH \
     actor_rollout_ref.rollout.val_kwargs.n=16 \
-    actor_rollout_ref.rollout.val_kwargs.temperature=0.7 \
+    actor_rollout_ref.rollout.val_kwargs.temperature=0.6 \
     actor_rollout_ref.rollout.val_kwargs.top_p=0.95 \
     actor_rollout_ref.rollout.repetition_penalty=$REPETITION_PENALTY \
     actor_rollout_ref.rollout.calculate_log_probs=True \
