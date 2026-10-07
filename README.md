@@ -55,10 +55,10 @@ RKL+FKL训练需要将脚本on_policy_distillation_opd.sh中的export USE_KL=${U
 bash on_policy_distillation_opd.sh
 ```
 
-FKL权重参数修改
+FKL权重参数修改为1.0
 
 ```bash
-bash on_policy_distillation_opd.sh
+bash on_policy_distillation_opd_1.0.sh
 ```
 
 ## 注意事项
