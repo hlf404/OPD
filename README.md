@@ -41,6 +41,26 @@ Top_k token的OPD训练需要将脚本on_policy_distillation_rkl.sh中的export 
 bash on_policy_distillation_rkl.sh
 ```
 
+### EOPD训练设置复现
+
+RKL（传统OPD）训练
+
+```bash
+bash on_policy_distillation_opd.sh
+```
+
+RKL+FKL训练需要将脚本on_policy_distillation_opd.sh中的export USE_KL=${USE_KL:-False}改为True
+
+```bash
+bash on_policy_distillation_opd.sh
+```
+
+FKL权重参数修改
+
+```bash
+bash on_policy_distillation_opd.sh
+```
+
 ## 注意事项
 
 - 环境安装可能会出现部分安装包版本错误或安装失败
