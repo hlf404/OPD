@@ -157,7 +157,7 @@ if [ "$USE_KL" = "True" ]; then
     actor_rollout_ref.actor.kl_loss_type=low_var_kl"
 else
     KL_ARGS="actor_rollout_ref.actor.use_kl_loss=False"
-fi high_entropy_threshold
+fi
 
 LR_ARGS=""
 if [ "$LR_SCHEDULER" = "cosine" ]; then
