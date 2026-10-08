@@ -66,7 +66,7 @@ export TOP_K_STRATEGY=${TOP_K_STRATEGY:-"only_stu"} # "only_stu" or "only_tch" o
 export REWARD_WEIGHT_MODE=${REWARD_WEIGHT_MODE:-"student_p"} # "student_p" or "teacher_p" or "none"
 export LR=${LR:-1e-6}
 # export LR_SCHEDULER=${LR_SCHEDULER:-constant}
-export USE_KL=${USE_KL:-True} # TODO: True / False (default False)
+export USE_KL=${USE_KL:-True # TODO: True / False (default False)
 export ENABLE_FORMAT_REWARD=${ENABLE_FORMAT_REWARD:-False} # TODO: True / False (default False)
 export MODEL_DTYPE=${MODEL_DTYPE:-bfloat16} # actor/ref/critic fsdp_config.model_dtype: fp32 or bfloat16
 export IS_PLOT=${IS_PLOT:-True} # TODO: True / False (default False)
@@ -157,7 +157,7 @@ if [ "$USE_KL" = "True" ]; then
     actor_rollout_ref.actor.kl_loss_type=low_var_kl"
 else
     KL_ARGS="actor_rollout_ref.actor.use_kl_loss=False"
-fi 
+fi
 
 LR_ARGS=""
 if [ "$LR_SCHEDULER" = "cosine" ]; then
