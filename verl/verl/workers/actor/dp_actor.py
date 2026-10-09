@@ -1074,6 +1074,104 @@ class DataParallelPPOActor(BasePPOActor):
                         policy_loss = pg_loss - entropy_loss * entropy_coeff
                     else:
                         policy_loss = pg_loss
+                    
+                    if forward_student_log_probs is not None:
+                        required_fkl_keys = (
+                            "forward_teacher_top_k_log_probs",
+                            "teacher_entropy",
+                        )
+                        missing_fkl_keys = [key for key in required_fkl_keys if key not in model_inputs]
+
+                        if not self.config.policy_loss.get("forward_kl_student_full_vocab", True):
+                            raise ValueError(
+                                "Mass Calibration requires full-vocabulary student log-probabilities"
+                            )
+
+                        # Full-vocabulary-normalized log probabilities,
+                        # gathered at the same teacher Top-K IDs.
+                        # Shape: [B, L, K]
+                        T_topk_logp_full = model_inputs["forward_teacher_top_k_log_probs"].detach().float()
+                        S_topk_logp_full = forward_student_log_probs.float()
+
+                        # --------------------------------------------
+                        # 1. Teacher/Student Top-K Coverage
+                        # Q = sum_{i in K} T(i)
+                        # P = sum_{i in K} S(i)
+                        # --------------------------------------------
+                        log_Q = torch.logsumexp(T_topk_logp_full, dim=-1)
+                        log_P = torch.logsumexp(S_topk_logp_full, dim=-1)
+                        Q = log_Q.exp().detach()
+                        P = log_P.exp()
+
+                        # --------------------------------------------
+                        # 2. Preference Matching
+                        # Q * KL(q_K || p_K)
+                        # --------------------------------------------
+                        log_q_cond = torch.log_softmax(T_topk_logp_full, dim=-1)
+                        log_p_cond = torch.log_softmax(S_topk_logp_full, dim=-1)
+                        preference_loss = Q * (log_q_cond.exp() * (log_q_cond - log_p_cond)).sum(dim=-1)
+
+                        # --------------------------------------------
+                        # 3. Mass Calibration
+                        # KL(Ber(Q) || Ber(P))
+                        # --------------------------------------------
+                        Q_tail = (-torch.expm1(log_Q)).detach()
+                        P_tail = (-torch.expm1(log_P))
+                        mass_loss = Q * (log_Q - log_P) + Q_tail * (Q_tail.log() - P_tail.log())
+
+                        # --------------------------------------------
+                        # 4. Entropy x Coverage Adaptive Weight
+                        #
+                        # beta = 1 + lambda *
+                        # sigmoid((H_T - tau) / scale) * (1 - Q)
+                        # --------------------------------------------
+                        teacher_entropy = model_inputs["teacher_entropy"].detach().float()
+
+                        if teacher_entropy.ndim == Q.ndim + 1 and teacher_entropy.shape[-1] == 1:
+                            teacher_entropy = teacher_entropy.squeeze(-1)
+
+                        # entropy_threshold = self.config.policy_loss.get("forward_kl_entropy_threshold", 0.8)
+                        # entropy_scale = self.config.policy_loss.get("forward_kl_entropy_scale", 0.2)
+                        # mass_lambda = self.config.policy_loss.get("forward_kl_mass_lambda", 1.0)
+                        # beta = (1.0 + mass_lambda * torch.sigmoid((teacher_entropy - entropy_threshold) / entropy_scale) * Q_tail).detach()
+                        entropy_uncertainty = -torch.expm1(-teacher_entropy)
+                        beta = (1.0 + Q_tail * entropy_uncertainty).detach()
+                        # --------------------------------------------
+                        # 5. Final Forward-KL Loss
+                        # --------------------------------------------
+                        forward_kl_per_token = preference_loss + beta * mass_loss
+                        forward_kl_coef = self.config.policy_loss.get("forward_kl_coef", 1.0)
+
+                        forward_loss_mask = response_mask
+                        if format_mask is not None:
+                            if format_mask.ndim == 1:
+                                format_mask = format_mask.unsqueeze(-1)
+
+                            forward_loss_mask = forward_loss_mask * format_mask
+
+                        forward_kl_loss = agg_loss(loss_mat=forward_kl_per_token, loss_mask=forward_loss_mask, loss_agg_mode=loss_agg_mode)
+                        policy_loss = policy_loss + forward_kl_coef * forward_kl_loss
+
+                        # --------------------------------------------
+                        # 6. Logging
+                        # --------------------------------------------
+                        micro_batch_metrics["actor/forward_kl_loss"] = forward_kl_loss.detach().item() * loss_scale_factor
+                        micro_batch_metrics["actor/forward_kl_coef"] = float(forward_kl_coef)
+
+                        with torch.no_grad():
+                            valid = forward_loss_mask.float()
+                            valid_count = valid.sum().clamp_min(1.0)
+
+                            def masked_mean(x):
+                                return ((x.detach() * valid).sum() / valid_count).item()
+
+                            micro_batch_metrics["actor/fkl_preference"] = (masked_mean(preference_loss))
+                            micro_batch_metrics["actor/fkl_mass"] = masked_mean(mass_loss)
+                            micro_batch_metrics["actor/fkl_weighted_mass"] = masked_mean(beta * mass_loss)
+                            micro_batch_metrics["actor/fkl_beta"] = masked_mean(beta)
+                            micro_batch_metrics["actor/fkl_teacher_coverage"] = masked_mean(Q)
+                            micro_batch_metrics["actor/fkl_student_coverage"] = masked_mean(P)
+                            micro_batch_metrics["actor/fkl_mass_gap"] = masked_mean((P - Q).abs())
                         
                     if self.config.use_kl_loss:
                         ref_log_prob = model_inputs["ref_log_prob"]
