@@ -65,3 +65,11 @@ bash on_policy_distillation_opd_1.0.sh
 
 - 环境安装可能会出现部分安装包版本错误或安装失败
 - 运行需要登录swanlab
+
+## 参考论文
+
+[Entropy-Aware On-Policy Distillation of Language Models](https://arxiv.org/abs/2603.07079)
+
+[Rethinking On-Policy Distillation of Large Language Models: Phenomenology, Mechanism, and Recipe](https://arxiv.org/abs/2604.13016)
+
+[Decoupling KL and Trajectories: A Unified Perspective for SFT, DAgger, Offline RL, and OPD in LLM Distillation](https://arxiv.org/abs/2605.16826)
