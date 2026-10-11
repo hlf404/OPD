@@ -68,8 +68,22 @@ bash on_policy_distillation_opd_1.0.sh
 
 ## 参考论文
 
+### token OPD
+
 [Entropy-Aware On-Policy Distillation of Language Models](https://arxiv.org/abs/2603.07079)
 
 [Rethinking On-Policy Distillation of Large Language Models: Phenomenology, Mechanism, and Recipe](https://arxiv.org/abs/2604.13016)
 
 [Decoupling KL and Trajectories: A Unified Perspective for SFT, DAgger, Offline RL, and OPD in LLM Distillation](https://arxiv.org/abs/2605.16826)
+
+### embedding RL / OPD
+
+[Guiding Cross-Modal Representations with MLLM Priors via Preference Alignment](https://proceedings.neurips.cc/paper_files/paper/2025/hash/61fe084a10444333b3da0c1f4434d51e-Abstract-Conference.html) ⭐
+
+[Learning to Retrieve via Reinforcement Learning in Embedding Space](https://arxiv.org/abs/2610.07731) 
+
+[Autoregressive Retriever: Improving Query Understanding from Item Feedback for Universal Multimodal Retrieval](https://arxiv.org/abs/2610.07731)
+
+[Efficient Rationale-based Retrieval: On-policy Distillation from Generative Rerankers based on JEPA](https://arxiv.org/abs/2604.23336) ⭐
+
+[OPRD: On-Policy Representation Distillation](https://arxiv.org/abs/2606.06021)
