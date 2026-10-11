@@ -1130,15 +1130,18 @@ class DataParallelPPOActor(BasePPOActor):
                         if teacher_entropy.ndim == Q.ndim + 1 and teacher_entropy.shape[-1] == 1:
                             teacher_entropy = teacher_entropy.squeeze(-1)
 
-                        # entropy_threshold = self.config.policy_loss.get("forward_kl_entropy_threshold", 0.8)
-                        # entropy_scale = self.config.policy_loss.get("forward_kl_entropy_scale", 0.2)
-                        # mass_lambda = self.config.policy_loss.get("forward_kl_mass_lambda", 1.0)
-                        # beta = (1.0 + mass_lambda * torch.sigmoid((teacher_entropy - entropy_threshold) / entropy_scale) * Q_tail).detach()
-                        entropy_uncertainty = -torch.expm1(-teacher_entropy)
-                        beta = (1.0 + Q_tail * entropy_uncertainty).detach()
+                        # # entropy_threshold = self.config.policy_loss.get("forward_kl_entropy_threshold", 0.8)
+                        # # entropy_scale = self.config.policy_loss.get("forward_kl_entropy_scale", 0.2)
+                        # # mass_lambda = self.config.policy_loss.get("forward_kl_mass_lambda", 1.0)
+                        # # beta = (1.0 + mass_lambda * torch.sigmoid((teacher_entropy - entropy_threshold) / entropy_scale) * Q_tail).detach()
+                        
+                        # entropy_uncertainty = -torch.expm1(-teacher_entropy)
+                        # beta = (1.0 + Q_tail * entropy_uncertainty).detach()
                         # --------------------------------------------
                         # 5. Final Forward-KL Loss
                         # --------------------------------------------
+                        # forward_kl_per_token = preference_loss + beta * mass_loss
+                        beta = (1.0 + Q - P.detach()).detach()
                         forward_kl_per_token = preference_loss + beta * mass_loss
                         forward_kl_coef = self.config.policy_loss.get("forward_kl_coef", 1.0)
 
